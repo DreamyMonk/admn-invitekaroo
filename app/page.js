@@ -13,9 +13,14 @@ import {
   watchCommunities,
   setCommunitySuspended,
   deleteCommunityCascade,
+  updateCommunityFields,
   watchUsers,
   setUserSuspended,
   deleteUser,
+  watchHosts,
+  getHost,
+  setHostSuspended,
+  deleteHost,
   getAdminDoc,
   watchAdmins,
   saveAdmin,
@@ -367,10 +372,49 @@ function Communities() {
   );
 }
 
+const COMMUNITY_FIELDS = [
+  ["name", "Name", "text"], ["about", "About", "area"], ["recurrence", "Recurrence", "text"],
+  ["city", "City", "text"], ["area", "Area", "text"], ["venue", "Venue", "text"], ["venueAddr", "Venue address", "text"],
+  ["guru", "Guru / Speaker", "text"], ["guruDesc", "Guru description", "text"],
+  ["youtube", "YouTube live link", "text"], ["helpline", "Helpline", "text"],
+  ["editionLabel", "Edition label", "text"], ["editionStart", "Edition start", "date"], ["editionEnd", "Edition end", "date"],
+];
+
+function fmtTs(ts) {
+  try { return ts?.toDate ? ts.toDate().toLocaleString() : "—"; } catch { return "—"; }
+}
+
 function CommunityCard({ c, busy, run }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [f, setF] = useState(c);
+  const [creator, setCreator] = useState(undefined); // undefined=not loaded, null=none
+  const [saving, setSaving] = useState(false);
   const b = busy === c.id;
   const sub = [c.city, c.venue].filter(Boolean).join(" · ");
+
+  async function expand() {
+    const next = !open;
+    setOpen(next);
+    if (next && creator === undefined) {
+      const h = await getHost(c.ownerUid).catch(() => null);
+      setCreator(h);
+    }
+  }
+  function startEdit() { setF(c); setEditing(true); setOpen(true); }
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  async function save() {
+    setSaving(true);
+    try {
+      const data = {};
+      COMMUNITY_FIELDS.forEach(([k]) => { data[k] = f[k] ?? ""; });
+      data.editionStatus = f.editionStatus || "active";
+      await updateCommunityFields(c.id, data);
+      setEditing(false);
+    } catch (e) { alert("Error: " + (e.message || e)); }
+    setSaving(false);
+  }
+
   return (
     <div className="card" style={{ marginBottom: 14, opacity: c.suspended ? 0.7 : 1 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -385,26 +429,89 @@ function CommunityCard({ c, busy, run }) {
           <div className="muted" style={{ marginTop: 2, fontSize: ".62rem", fontFamily: "var(--fm)" }}>owner: {c.ownerUid || "—"}</div>
         </div>
       </div>
-      {open && <DetailGrid obj={c} skip={["id", "suspended"]} />}
-      <ManageActions
-        suspended={c.suspended} busy={b} open={open} onToggle={() => setOpen((o) => !o)}
-        onSuspend={() => run(c.id, () => setCommunitySuspended(c.id, true))}
-        onUnsuspend={() => run(c.id, () => setCommunitySuspended(c.id, false))}
-        onDelete={() => { if (confirm(`Delete "${c.name}" and all its programmes? This cannot be undone.`)) run(c.id, () => deleteCommunityCascade(c.id)); }}
-      />
+
+      {open && !editing && (
+        <>
+          <DetailGrid obj={c} skip={["id", "suspended", "createdAt", "updatedAt"]} />
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--bd)", fontSize: ".72rem", color: "var(--ink3)" }}>
+            <b>Created by:</b>{" "}
+            {creator === undefined ? "…" : creator ? (creator.hostName || creator.email || c.ownerUid) : (c.ownerUid || "—")}
+            {creator?.email && creator?.hostName ? ` · ${creator.email}` : ""}
+            {" · "}<b>Created:</b> {fmtTs(c.createdAt)}
+            {c.updatedAt ? <> · <b>Updated:</b> {fmtTs(c.updatedAt)}</> : null}
+          </div>
+        </>
+      )}
+
+      {open && editing && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--bd)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+            {COMMUNITY_FIELDS.map(([k, label, type]) => (
+              <div key={k} style={type === "area" ? { gridColumn: "1 / -1" } : undefined}>
+                <label className="label">{label}</label>
+                {type === "area"
+                  ? <textarea className="input" rows={2} value={f[k] || ""} onChange={(e) => set(k, e.target.value)} />
+                  : <input className="input" type={type} value={f[k] || ""} onChange={(e) => set(k, e.target.value)} />}
+              </div>
+            ))}
+            <div>
+              <label className="label">Edition status</label>
+              <select className="input" value={f.editionStatus || "active"} onChange={(e) => set("editionStatus", e.target.value)}>
+                <option value="active">active</option><option value="upcoming">upcoming</option><option value="ended">ended</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button className="btn btn-p btn-sm" disabled={saving} onClick={save}><Icon name="check" size={13} stroke="#fff" /> {saving ? "Saving…" : "Save changes"}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        <button className="btn btn-ghost btn-sm" onClick={expand}>{open ? "Hide 360° info" : "360° info"}</button>
+        {!editing && <button className="btn btn-ghost btn-sm" onClick={startEdit}><Icon name="edit" size={13} /> Edit</button>}
+        <div style={{ flex: 1 }} />
+        {c.suspended
+          ? <button className="btn btn-p btn-sm" disabled={b} onClick={() => run(c.id, () => setCommunitySuspended(c.id, false))}><Icon name="check" size={13} stroke="#fff" /> {b ? "…" : "Unsuspend"}</button>
+          : <button className="btn btn-ghost btn-sm" disabled={b} onClick={() => run(c.id, () => setCommunitySuspended(c.id, true))}><Icon name="clock" size={13} /> {b ? "…" : "Suspend"}</button>}
+        <button className="btn btn-danger btn-sm" disabled={b} onClick={() => { if (confirm(`Delete "${c.name}" and all its programmes? This cannot be undone.`)) run(c.id, () => deleteCommunityCascade(c.id)); }}><Icon name="trash" size={13} /> Delete</button>
+      </div>
     </div>
   );
 }
 
+function RoleTag({ kind }) {
+  const s = kind === "host"
+    ? { label: "Host", bg: "#FEF3C7", color: "#B45309" }
+    : { label: "User", bg: "#DBEAFE", color: "#1D4ED8" };
+  return <span style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".4px", padding: "2px 8px", borderRadius: 20, background: s.bg, color: s.color }}>{s.label}</span>;
+}
+
 function Users() {
-  const [rows, setRows] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [hosts, setHosts] = useState([]);
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState("");
-  useEffect(() => watchUsers(setRows), []);
+  useEffect(() => watchUsers(setUsers), []);
+  useEffect(() => watchHosts(setHosts), []);
 
-  const view = filter === "all" ? rows
-    : filter === "suspended" ? rows.filter((u) => u.suspended)
-    : rows.filter((u) => !u.suspended);
+  // Merge app users (`users`) and dashboard hosts (`hosts`) by uid → tag each.
+  const map = new Map();
+  users.forEach((u) => map.set(u.id, { uid: u.id, user: u, host: null }));
+  hosts.forEach((h) => { const e = map.get(h.id) || { uid: h.id, user: null, host: null }; e.host = h; map.set(h.id, e); });
+  const people = [...map.values()].map((e) => ({
+    ...e,
+    isUser: !!e.user, isHost: !!e.host,
+    suspended: !!(e.user?.suspended || e.host?.suspended),
+  }));
+
+  const view = people.filter((e) =>
+    filter === "all" ? true
+      : filter === "users" ? e.isUser
+      : filter === "hosts" ? e.isHost
+      : filter === "suspended" ? e.suspended
+      : true);
 
   async function run(id, fn) {
     setBusy(id);
@@ -412,60 +519,94 @@ function Users() {
     setBusy("");
   }
 
+  const tabs = [["all", "All"], ["users", "Users"], ["hosts", "Hosts"], ["suspended", "Suspended"]];
   return (
     <>
-      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        {[["all", "All"], ["active", "Active"], ["suspended", "Suspended"]].map(([k, l]) => (
-          <button key={k} className={`btn btn-sm ${filter === k ? "btn-p" : "btn-ghost"}`} onClick={() => setFilter(k)}>{l}</button>
-        ))}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        {tabs.map(([k, l]) => {
+          const n = k === "all" ? people.length : k === "users" ? people.filter((e) => e.isUser).length : k === "hosts" ? people.filter((e) => e.isHost).length : people.filter((e) => e.suspended).length;
+          return <button key={k} className={`btn btn-sm ${filter === k ? "btn-p" : "btn-ghost"}`} onClick={() => setFilter(k)}>{l}{n ? ` · ${n}` : ""}</button>;
+        })}
       </div>
       {view.length === 0 ? (
-        <div className="card"><div className="empty"><Icon name="users" size={40} /><div style={{ marginTop: 10 }}>No users yet. App users appear here once they sign in and sync.</div></div></div>
-      ) : view.map((u) => <UserCard key={u.id} u={u} busy={busy} run={run} />)}
+        <div className="card"><div className="empty"><Icon name="users" size={40} /><div style={{ marginTop: 10 }}>Nobody here yet. App users appear once they sign in &amp; sync; hosts appear once they sign into the dashboard.</div></div></div>
+      ) : view.map((e) => <PersonCard key={e.uid} e={e} busy={busy} run={run} />)}
     </>
   );
 }
 
-function UserCard({ u, busy, run }) {
+function PersonCard({ e, busy, run }) {
   const [open, setOpen] = useState(false);
-  const b = busy === u.id;
-  const p = u.profile || {};
-  const name = [p.name, p.family].filter(Boolean).join(" ") || "User";
-  const counts = [
-    ["events", (u.events || []).length],
-    ["subscriptions", (u.subs || []).length],
-    ["saved", (u.saved || []).length],
-    ["check-ins", (u.checkIns || []).length],
-  ];
+  const b = busy === e.uid;
+  const p = e.user?.profile || {};
+  const name = [p.name, p.family].filter(Boolean).join(" ") || e.host?.hostName || e.host?.email || "User";
+  const contact = [p.mobile || e.host?.email, p.city].filter(Boolean).join(" · ") || "—";
+  const counts = e.user ? [
+    ["events", (e.user.events || []).length],
+    ["subscriptions", (e.user.subs || []).length],
+    ["saved", (e.user.saved || []).length],
+    ["check-ins", (e.user.checkIns || []).length],
+  ] : [];
+
+  async function setSusp(val) {
+    const tasks = [];
+    if (e.user) tasks.push(setUserSuspended(e.uid, val));
+    if (e.host) tasks.push(setHostSuspended(e.uid, val));
+    await Promise.all(tasks);
+  }
+  async function del() {
+    const tasks = [];
+    if (e.user) tasks.push(deleteUser(e.uid));
+    if (e.host) tasks.push(deleteHost(e.uid));
+    await Promise.all(tasks);
+  }
+
   return (
-    <div className="card" style={{ marginBottom: 14, opacity: u.suspended ? 0.7 : 1 }}>
+    <div className="card" style={{ marginBottom: 14, opacity: e.suspended ? 0.7 : 1 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div className="av" style={{ flexShrink: 0 }}>{name.slice(0, 2).toUpperCase()}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 700, fontSize: ".95rem" }}>{name}</div>
-            <SuspendBadge suspended={u.suspended} />
+            {e.isUser && <RoleTag kind="user" />}
+            {e.isHost && <RoleTag kind="host" />}
+            <SuspendBadge suspended={e.suspended} />
           </div>
-          <div className="muted" style={{ marginTop: 3, fontSize: ".72rem" }}>{[p.mobile, p.city].filter(Boolean).join(" · ") || "—"}</div>
-          <div className="muted" style={{ marginTop: 2, fontSize: ".62rem", fontFamily: "var(--fm)" }}>uid: {u.id}</div>
+          <div className="muted" style={{ marginTop: 3, fontSize: ".72rem" }}>{contact}</div>
+          <div className="muted" style={{ marginTop: 2, fontSize: ".62rem", fontFamily: "var(--fm)" }}>uid: {e.uid}</div>
         </div>
       </div>
+
       {open && (
-        <>
-          <DetailGrid obj={p} skip={[]} />
-          <div style={{ marginTop: 10, display: "flex", gap: 14, flexWrap: "wrap" }}>
-            {counts.map(([lbl, n]) => (
-              <div key={lbl} style={{ fontSize: ".72rem" }}><b style={{ fontFamily: "var(--fm)" }}>{n}</b> <span className="muted">{lbl}</span></div>
-            ))}
-          </div>
-        </>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--bd)" }}>
+          {e.isUser && (
+            <>
+              <div style={{ fontSize: ".6rem", fontWeight: 800, letterSpacing: ".5px", color: "var(--ink4)", textTransform: "uppercase" }}>App profile</div>
+              <DetailGrid obj={p} skip={[]} />
+              <div style={{ marginTop: 10, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                {counts.map(([lbl, n]) => (
+                  <div key={lbl} style={{ fontSize: ".72rem" }}><b style={{ fontFamily: "var(--fm)" }}>{n}</b> <span className="muted">{lbl}</span></div>
+                ))}
+              </div>
+            </>
+          )}
+          {e.isHost && (
+            <div style={{ marginTop: e.isUser ? 14 : 0 }}>
+              <div style={{ fontSize: ".6rem", fontWeight: 800, letterSpacing: ".5px", color: "var(--ink4)", textTransform: "uppercase" }}>Host account</div>
+              <DetailGrid obj={e.host} skip={["id", "suspended"]} />
+            </div>
+          )}
+        </div>
       )}
-      <ManageActions
-        suspended={u.suspended} busy={b} open={open} onToggle={() => setOpen((o) => !o)} detailsCount={Object.keys(p).length}
-        onSuspend={() => run(u.id, () => setUserSuspended(u.id, true))}
-        onUnsuspend={() => run(u.id, () => setUserSuspended(u.id, false))}
-        onDelete={() => { if (confirm(`Delete ${name}'s data? (The Firebase Auth account itself needs server-side deletion.)`)) run(u.id, () => deleteUser(u.id)); }}
-      />
+
+      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => setOpen((o) => !o)}>{open ? "Hide 360° info" : "360° info"}</button>
+        <div style={{ flex: 1 }} />
+        {e.suspended
+          ? <button className="btn btn-p btn-sm" disabled={b} onClick={() => run(e.uid, () => setSusp(false))}><Icon name="check" size={13} stroke="#fff" /> {b ? "…" : "Unsuspend"}</button>
+          : <button className="btn btn-ghost btn-sm" disabled={b} onClick={() => run(e.uid, () => setSusp(true))}><Icon name="clock" size={13} /> {b ? "…" : "Suspend"}</button>}
+        <button className="btn btn-danger btn-sm" disabled={b} onClick={() => { if (confirm(`Delete ${name}'s data? (The Firebase Auth account itself needs server-side deletion.)`)) run(e.uid, del); }}><Icon name="trash" size={13} /> Delete</button>
+      </div>
     </div>
   );
 }

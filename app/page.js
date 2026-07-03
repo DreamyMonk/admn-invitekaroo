@@ -16,6 +16,10 @@ import {
   watchUsers,
   setUserSuspended,
   deleteUser,
+  getAdminDoc,
+  watchAdmins,
+  saveAdmin,
+  removeAdmin,
 } from "@/lib/db";
 import Icon from "@/components/Icon";
 import AuthGate from "@/components/AuthGate";
@@ -26,12 +30,23 @@ const STATUS_META = {
   rejected: { label: "Rejected", color: "#B91C1C", bg: "#FEE2E2" },
 };
 
+// Access-controlled modules (nav order). `sec` groups them in the sidebar.
+const MODULES = [
+  { id: "applications", label: "Host Applications", ic: "user", sec: "Review" },
+  { id: "overview", label: "Platform Overview", ic: "grid", sec: "Review" },
+  { id: "communities", label: "Communities", ic: "flower", sec: "Manage" },
+  { id: "users", label: "Users", ic: "users", sec: "Manage" },
+  { id: "codes", label: "Login Codes", ic: "clock", sec: "Testing" },
+];
+const ALL_MODULE_IDS = MODULES.map((m) => m.id);
+
 const TITLES = {
   applications: "Host Applications",
   overview: "Platform Overview",
   communities: "Communities",
   users: "Users",
   codes: "Login Codes (test)",
+  admins: "Admins & Access",
 };
 
 const META_KEYS = new Set([
@@ -50,17 +65,67 @@ const LABELS = {
 };
 const labelOf = (k) => LABELS[k] || k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 
+function Loading() {
+  return <div className="center-screen"><div style={{ color: "#fff" }}>Loading…</div></div>;
+}
+
 export default function AdminHome() {
   const [user, setUser] = useState(undefined);
-  const [ready, setReady] = useState(false);
-  const [view, setView] = useState("applications");
+  const [perm, setPerm] = useState(undefined); // undefined=resolving; null=denied; {isSuper,modules}
+  const [view, setView] = useState("overview");
 
-  useEffect(() => watchAuth((u) => { setUser(u || null); setReady(true); }), []);
+  useEffect(() => watchAuth((u) => setUser(u || null)), []);
 
-  if (user === undefined || !ready)
-    return <div className="center-screen"><div style={{ color: "#fff" }}>Loading…</div></div>;
+  // Resolve the signed-in admin's module access: owner emails are super; others
+  // must have an `admins/{email}` doc; role 'super' → all modules.
+  useEffect(() => {
+    if (user === undefined) return;
+    if (!user) { setPerm(undefined); return; }
+    let alive = true;
+    setPerm(undefined);
+    (async () => {
+      let p = null;
+      if (isAdminEmail(user.email)) {
+        p = { isSuper: true, modules: ALL_MODULE_IDS };
+      } else {
+        const a = await getAdminDoc(user.email).catch(() => null);
+        if (a) p = { isSuper: a.role === "super", modules: a.role === "super" ? ALL_MODULE_IDS : (a.modules || []) };
+      }
+      if (!alive) return;
+      setPerm(p);
+      if (p) setView(p.modules[0] || (p.isSuper ? "admins" : "none"));
+    })();
+    return () => { alive = false; };
+  }, [user]);
+
+  if (user === undefined) return <Loading />;
   if (!user) return <AuthGate />;
-  if (!isAdminEmail(user.email)) return <NotAuthorized email={user.email} />;
+  if (perm === undefined) return <Loading />;
+  if (!perm) return <NotAuthorized email={user.email} />;
+
+  const allowed = new Set(perm.modules);
+  const canSee = (id) => allowed.has(id) || (id === "admins" && perm.isSuper);
+  const shownView = canSee(view) ? view : (perm.modules[0] || (perm.isSuper ? "admins" : "none"));
+
+  // Sidebar nav — only modules this admin can access (+ Admins for super).
+  const navItems = [];
+  let lastSec = null;
+  MODULES.filter((m) => allowed.has(m.id)).forEach((m) => {
+    if (m.sec !== lastSec) { navItems.push(<div className="nav-sec" key={"s" + m.sec}>{m.sec}</div>); lastSec = m.sec; }
+    navItems.push(
+      <div key={m.id} className={`nav-i ${shownView === m.id ? "on" : ""}`} onClick={() => setView(m.id)}>
+        <Icon name={m.ic} /><span>{m.label}</span>
+      </div>,
+    );
+  });
+  if (perm.isSuper) {
+    navItems.push(<div className="nav-sec" key="s-access">Access</div>);
+    navItems.push(
+      <div key="admins" className={`nav-i ${shownView === "admins" ? "on" : ""}`} onClick={() => setView("admins")}>
+        <Icon name="gear" /><span>Admins &amp; Access</span>
+      </div>,
+    );
+  }
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "252px 1fr", height: "100vh" }}>
@@ -68,33 +133,14 @@ export default function AdminHome() {
         <div className="side-top">
           <div className="side-brand">
             <div className="mk"><Icon name="layers" size={20} stroke="#fff" /></div>
-            <div><div className="nm">Invite <b>Karoo</b></div><div className="rl">Platform Admin</div></div>
+            <div><div className="nm">Invite <b>Karoo</b></div><div className="rl">{perm.isSuper ? "Super Admin" : "Admin"}</div></div>
           </div>
         </div>
-        <nav className="nav">
-          <div className="nav-sec">Review</div>
-          <div className={`nav-i ${view === "applications" ? "on" : ""}`} onClick={() => setView("applications")}>
-            <Icon name="user" /><span>Host Applications</span>
-          </div>
-          <div className={`nav-i ${view === "overview" ? "on" : ""}`} onClick={() => setView("overview")}>
-            <Icon name="grid" /><span>Platform Overview</span>
-          </div>
-          <div className="nav-sec">Manage</div>
-          <div className={`nav-i ${view === "communities" ? "on" : ""}`} onClick={() => setView("communities")}>
-            <Icon name="flower" /><span>Communities</span>
-          </div>
-          <div className={`nav-i ${view === "users" ? "on" : ""}`} onClick={() => setView("users")}>
-            <Icon name="users" /><span>Users</span>
-          </div>
-          <div className="nav-sec">Testing</div>
-          <div className={`nav-i ${view === "codes" ? "on" : ""}`} onClick={() => setView("codes")}>
-            <Icon name="clock" /><span>Login Codes</span>
-          </div>
-        </nav>
+        <nav className="nav">{navItems}</nav>
         <div className="side-foot">
           <div className="host-chip">
             <div className="av">{(user.email || "A").slice(0, 2).toUpperCase()}</div>
-            <div className="hn"><div className="t">Admin</div><div className="s">{user.email}</div></div>
+            <div className="hn"><div className="t">{perm.isSuper ? "Super Admin" : "Admin"}</div><div className="s">{user.email}</div></div>
           </div>
         </div>
       </aside>
@@ -102,18 +148,20 @@ export default function AdminHome() {
       <div className="main" style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <header className="topbar">
           <div className="tb-title">
-            <div className="t">{TITLES[view] || "Admin"}</div>
+            <div className="t">{TITLES[shownView] || "Admin"}</div>
             <div className="s">Invite Karoo — Admin</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={logout}><Icon name="logout" size={15} /> Log out</button>
         </header>
         <main className="view" style={{ overflowY: "auto", flex: 1, padding: 24 }}>
           <div className="view-in">
-            {view === "applications" ? <Applications />
-              : view === "communities" ? <Communities />
-              : view === "users" ? <Users />
-              : view === "codes" ? <LoginCodes />
-              : <Overview />}
+            {shownView === "applications" ? <Applications />
+              : shownView === "communities" ? <Communities />
+              : shownView === "users" ? <Users />
+              : shownView === "codes" ? <LoginCodes />
+              : shownView === "admins" && perm.isSuper ? <Admins email={user.email} />
+              : shownView === "overview" ? <Overview />
+              : <div className="card"><div className="empty"><Icon name="user" size={40} /><div style={{ marginTop: 10 }}>No modules assigned to your account yet. Ask a super-admin to grant access.</div></div></div>}
           </div>
         </main>
       </div>
@@ -419,6 +467,102 @@ function UserCard({ u, busy, run }) {
         onDelete={() => { if (confirm(`Delete ${name}'s data? (The Firebase Auth account itself needs server-side deletion.)`)) run(u.id, () => deleteUser(u.id)); }}
       />
     </div>
+  );
+}
+
+function Admins({ email }) {
+  const [rows, setRows] = useState([]);
+  const [f, setF] = useState({ email: "", role: "admin", modules: [] });
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => watchAdmins(setRows), []);
+
+  const toggle = (id) => setF((x) => ({ ...x, modules: x.modules.includes(id) ? x.modules.filter((m) => m !== id) : [...x.modules, id] }));
+  function editRow(a) { setF({ email: a.email, role: a.role || "admin", modules: a.modules || [] }); setEditing(true); }
+  function reset() { setF({ email: "", role: "admin", modules: [] }); setEditing(false); }
+
+  async function save() {
+    const em = f.email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return alert("Enter a valid email");
+    setBusy(true);
+    try {
+      await saveAdmin(em, { role: f.role, modules: f.role === "super" ? ALL_MODULE_IDS : f.modules, addedBy: email });
+      reset();
+    } catch (e) { alert("Error: " + (e.message || e)); }
+    setBusy(false);
+  }
+  async function remove(em) {
+    if (!confirm(`Remove admin ${em}? They lose all access.`)) return;
+    try { await removeAdmin(em); } catch (e) { alert("Error: " + (e.message || e)); }
+  }
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-h" style={{ marginBottom: 10 }}>
+          <div className="ttl"><Icon name="gear" /> {editing ? `Edit ${f.email}` : "Add admin"}</div>
+          {editing && <button className="btn btn-ghost btn-sm" onClick={reset}>Cancel edit</button>}
+        </div>
+        <div className="row" style={{ alignItems: "flex-end" }}>
+          <div style={{ flex: 2 }}>
+            <label className="label">Email</label>
+            <input className="input" type="email" value={f.email} disabled={editing}
+              onChange={(e) => setF((x) => ({ ...x, email: e.target.value }))} placeholder="admin@example.com" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label className="label">Role</label>
+            <select className="input" value={f.role} onChange={(e) => setF((x) => ({ ...x, role: e.target.value }))}>
+              <option value="admin">Admin (module access)</option>
+              <option value="super">Super admin (full)</option>
+            </select>
+          </div>
+        </div>
+        {f.role !== "super" && (
+          <>
+            <label className="label" style={{ marginTop: 12 }}>Module access</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {MODULES.map((m) => {
+                const on = f.modules.includes(m.id);
+                return (
+                  <button key={m.id} type="button" onClick={() => toggle(m.id)}
+                    className={`btn btn-sm ${on ? "btn-p" : "btn-ghost"}`}>
+                    <Icon name={m.ic} size={13} stroke={on ? "#fff" : undefined} /> {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+        <button className="btn btn-p" style={{ marginTop: 14 }} disabled={busy} onClick={save}>
+          <Icon name="check" size={14} stroke="#fff" /> {busy ? "Saving…" : editing ? "Save changes" : "Add admin"}
+        </button>
+        <div className="muted" style={{ marginTop: 8, fontSize: ".7rem" }}>
+          Owner emails (set in <code>NEXT_PUBLIC_ADMIN_EMAILS</code>) are always super-admins and don't appear below.
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-h" style={{ marginBottom: 8 }}><div className="ttl"><Icon name="users" /> Admins · {rows.length}</div></div>
+        {rows.length === 0 ? (
+          <div className="empty"><Icon name="user" size={40} /><div style={{ marginTop: 10 }}>No added admins yet. Only owner accounts have access.</div></div>
+        ) : rows.map((a) => (
+          <div key={a.id} style={{ padding: "11px 0", borderBottom: "1px solid var(--bd)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <div style={{ fontWeight: 700, fontSize: ".86rem", fontFamily: "var(--fm)" }}>{a.email}</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                {a.role === "super"
+                  ? <span style={{ fontSize: ".56rem", fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "var(--t1)", color: "var(--t7)" }}>SUPER · full access</span>
+                  : (a.modules || []).length
+                    ? (a.modules || []).map((m) => <span key={m} style={{ fontSize: ".56rem", fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "var(--bd)", color: "var(--ink2)" }}>{TITLES[m] || m}</span>)
+                    : <span className="muted" style={{ fontSize: ".68rem" }}>no modules</span>}
+              </div>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => editRow(a)}><Icon name="edit" size={13} /> Edit</button>
+            <button className="btn btn-danger btn-sm" onClick={() => remove(a.email)}><Icon name="trash" size={13} /></button>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

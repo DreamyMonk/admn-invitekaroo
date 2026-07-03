@@ -14,6 +14,11 @@ submitted from the Invite Karoo mobile app. Deploys to **admin.invitekaroo.com**
   **Unsuspend**, **Delete** (removes the user's Firestore data; deleting the
   Firebase Auth account itself needs a server function).
 - **Platform Overview:** live counts of communities, published programmes, applications.
+- **Admins & Access (super-admins only):** add other admins by email with
+  **module-wise access control** — pick exactly which modules each admin can use,
+  or make them a super-admin (full access). Edit / remove admins anytime. Backed by
+  the Firestore `admins/{email}` collection; owner emails from
+  `NEXT_PUBLIC_ADMIN_EMAILS` are always super-admins.
 - **Login Codes (testing):** when SMS OTP isn't set up, the app's **“Test login
   (no SMS)”** generates a login code and publishes it to Firestore `otpDebug`.
   This view shows the number + code so a tester can read it and finish logging in.

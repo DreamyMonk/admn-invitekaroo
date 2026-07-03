@@ -8,6 +8,11 @@ submitted from the Invite Karoo mobile app. Deploys to **admin.invitekaroo.com**
 - **Host Applications:** live list from Firestore `hostApplications` — filter by
   Pending / Approved / Rejected, expand full details, Approve / Reject / delete.
 - **Platform Overview:** live counts of communities, published programmes, applications.
+- **Login Codes (testing):** when SMS OTP isn't set up, the app's **“Test login
+  (no SMS)”** generates a login code and publishes it to Firestore `otpDebug`.
+  This view shows the number + code so a tester can read it and finish logging in.
+  Test-only — the app signs in anonymously; tighten/remove `otpDebug` rules and
+  the app's test button before production.
 
 ## Deploy (Vercel)
 1. Import this repo as a new Vercel project.

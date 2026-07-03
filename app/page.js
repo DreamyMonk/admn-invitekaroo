@@ -8,6 +8,8 @@ import {
   setApplicationStatus,
   deleteApplication,
   platformStats,
+  watchOtpDebug,
+  deleteOtpDebug,
 } from "@/lib/db";
 import Icon from "@/components/Icon";
 import AuthGate from "@/components/AuthGate";
@@ -63,6 +65,10 @@ export default function AdminHome() {
           <div className={`nav-i ${view === "overview" ? "on" : ""}`} onClick={() => setView("overview")}>
             <Icon name="grid" /><span>Platform Overview</span>
           </div>
+          <div className="nav-sec">Testing</div>
+          <div className={`nav-i ${view === "codes" ? "on" : ""}`} onClick={() => setView("codes")}>
+            <Icon name="clock" /><span>Login Codes</span>
+          </div>
         </nav>
         <div className="side-foot">
           <div className="host-chip">
@@ -75,14 +81,14 @@ export default function AdminHome() {
       <div className="main" style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <header className="topbar">
           <div className="tb-title">
-            <div className="t">{view === "applications" ? "Host Applications" : "Platform Overview"}</div>
+            <div className="t">{view === "applications" ? "Host Applications" : view === "codes" ? "Login Codes (test)" : "Platform Overview"}</div>
             <div className="s">Invite Karoo — Admin</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={logout}><Icon name="logout" size={15} /> Log out</button>
         </header>
         <main className="view" style={{ overflowY: "auto", flex: 1, padding: 24 }}>
           <div className="view-in">
-            {view === "applications" ? <Applications /> : <Overview />}
+            {view === "applications" ? <Applications /> : view === "codes" ? <LoginCodes /> : <Overview />}
           </div>
         </main>
       </div>
@@ -212,6 +218,57 @@ function AppCard({ a, busy, onAct, onRemove }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function LoginCodes() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => watchOtpDebug(setRows), []);
+
+  function fmtTime(ts) {
+    try { return ts?.toDate ? ts.toDate().toLocaleString() : "—"; } catch { return "—"; }
+  }
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 16, background: "var(--t0)", border: "1px solid var(--t1)" }}>
+        <div style={{ fontSize: ".82rem", color: "var(--ink2)" }}>
+          <b>Test login codes.</b> When someone uses “Test login (no SMS)” in the app, the generated
+          code appears here — read it and enter it in the app to sign in. For testing only.
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-h" style={{ marginBottom: 8 }}><div className="ttl"><Icon name="clock" /> Codes · {rows.length}</div></div>
+        {rows.length === 0 ? (
+          <div className="empty"><Icon name="clock" size={40} /><div style={{ marginTop: 10 }}>No test codes yet. Tap “Test login (no SMS)” in the app to generate one.</div></div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>{["Number", "Code", "Status", "Generated", ""].map((h) => (
+                <th key={h} style={{ textAlign: "left", padding: "8px 10px", fontSize: ".62rem", textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", borderBottom: "1px solid var(--bd)" }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td style={{ padding: "10px", fontSize: ".82rem", fontFamily: "var(--fm)", borderBottom: "1px solid var(--bd)" }}>{r.number || r.id}</td>
+                  <td style={{ padding: "10px", borderBottom: "1px solid var(--bd)" }}>
+                    <span style={{ fontFamily: "var(--fm)", fontWeight: 800, fontSize: "1.05rem", letterSpacing: "3px", color: "var(--t7)" }}>{r.code || "—"}</span>
+                  </td>
+                  <td style={{ padding: "10px", fontSize: ".72rem", borderBottom: "1px solid var(--bd)" }}>
+                    <span style={{ fontWeight: 700, color: r.used ? "#15803D" : "#B45309" }}>{r.used ? "Used" : "Active"}</span>
+                  </td>
+                  <td style={{ padding: "10px", fontSize: ".72rem", color: "var(--ink3)", borderBottom: "1px solid var(--bd)" }}>{fmtTime(r.at)}</td>
+                  <td style={{ padding: "10px", textAlign: "right", borderBottom: "1px solid var(--bd)" }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => deleteOtpDebug(r.id)}><Icon name="trash" size={13} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
   );
 }
 

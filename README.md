@@ -7,6 +7,12 @@ submitted from the Invite Karoo mobile app. Deploys to **admin.invitekaroo.com**
   the `NEXT_PUBLIC_ADMIN_EMAILS` allowlist.
 - **Host Applications:** live list from Firestore `hostApplications` — filter by
   Pending / Approved / Rejected, expand full details, Approve / Reject / delete.
+- **Communities:** all communities with 360° info; **Suspend** (also hides its
+  programmes from the app), **Unsuspend**, and **Delete** (removes the community
+  + its programmes).
+- **Users:** all app users with 360° profile + activity counts; **Suspend**,
+  **Unsuspend**, **Delete** (removes the user's Firestore data; deleting the
+  Firebase Auth account itself needs a server function).
 - **Platform Overview:** live counts of communities, published programmes, applications.
 - **Login Codes (testing):** when SMS OTP isn't set up, the app's **“Test login
   (no SMS)”** generates a login code and publishes it to Firestore `otpDebug`.

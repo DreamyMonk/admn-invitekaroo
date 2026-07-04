@@ -137,7 +137,7 @@ export default function AdminHome() {
       <aside className="side">
         <div className="side-top">
           <div className="side-brand">
-            <div className="mk"><Icon name="layers" size={20} stroke="#fff" /></div>
+            <div className="mk" style={{ background: "#fff", overflow: "hidden", padding: 0 }}><img src="/logo.jpg" alt="Invite Karoo" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 32%" }} /></div>
             <div><div className="nm">Invite <b>Karoo</b></div><div className="rl">{perm.isSuper ? "Super Admin" : "Admin"}</div></div>
           </div>
         </div>
@@ -178,7 +178,7 @@ function NotAuthorized({ email }) {
   return (
     <div className="center-screen">
       <div className="card" style={{ maxWidth: 420, width: "100%", textAlign: "center" }}>
-        <div className="logo" style={{ margin: "0 auto 12px" }}><Icon name="layers" size={22} stroke="#fff" /></div>
+        <div style={{ width: 96, margin: "0 auto 12px", background: "#fff", borderRadius: 18, padding: 10 }}><img src="/logo.jpg" alt="Invite Karoo" style={{ width: "100%", display: "block", borderRadius: 8 }} /></div>
         <div className="h2">Not authorized</div>
         <p className="muted" style={{ marginTop: 6 }}>
           <b>{email}</b> is not an admin account. Ask the platform owner to add your email to the admin allowlist.

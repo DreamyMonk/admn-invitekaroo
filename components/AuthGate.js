@@ -36,9 +36,11 @@ export default function AuthGate() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 11, marginBottom: 18 }}>
-          <div className="logo"><Icon name="layers" size={22} stroke="#fff" /></div>
-          <div><div className="name">Invite <b>Karoo</b></div><div className="sub">Platform Admin</div></div>
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ width: 140, margin: "0 auto 8px", background: "#fff", borderRadius: 20, padding: 12, boxShadow: "0 10px 34px rgba(0,0,0,.12)" }}>
+            <img src="/logo.jpg" alt="Invite Karoo" style={{ width: "100%", display: "block", borderRadius: 10 }} />
+          </div>
+          <div className="sub">Platform Admin</div>
         </div>
         <div className="card">
           {step === "email" ? (

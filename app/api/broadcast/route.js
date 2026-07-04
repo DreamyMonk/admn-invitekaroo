@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 // email is an owner (env allowlist) or has an `admins` doc.
 export async function POST(req) {
   try {
-    const { token, title, body } = await req.json();
+    const { token, title, body, html } = await req.json();
     if (!title) return NextResponse.json({ ok: false, error: "Title required" }, { status: 400 });
     if (!token) return NextResponse.json({ ok: false, error: "Not signed in" }, { status: 401 });
 
@@ -50,6 +50,16 @@ export async function POST(req) {
       apns: { payload: { aps: { sound: "default" } } },
       data: { type: "announcement" },
     });
+    // Keep a record (rich HTML + plain text) for the audit trail / future in-app view.
+    try {
+      await admin.firestore().collection("announcements").add({
+        title,
+        body: body || "",
+        html: html || "",
+        sentBy: email,
+        at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
     return NextResponse.json({ ok: true, id });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });

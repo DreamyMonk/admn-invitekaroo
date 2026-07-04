@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   watchAuth,
   logout,
@@ -711,9 +711,45 @@ function Admins({ email }) {
   );
 }
 
+// Lightweight dependency-free WYSIWYG (contentEditable + execCommand).
+function RichEditor({ onChange }) {
+  const ref = useRef(null);
+  const emit = () => {
+    const el = ref.current;
+    if (el && onChange) onChange({ html: el.innerHTML, text: (el.innerText || "").trim() });
+  };
+  const cmd = (c) => { document.execCommand(c, false, null); ref.current?.focus(); emit(); };
+  const insert = (t) => { ref.current?.focus(); document.execCommand("insertText", false, t); emit(); };
+  const Tb = ({ onClick, title, children }) => (
+    <button type="button" title={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick}
+      style={{ minWidth: 30, height: 28, padding: "0 7px", borderRadius: 7, border: "1px solid var(--bd)", background: "#fff", cursor: "pointer", fontSize: ".85rem", lineHeight: 1 }}>
+      {children}
+    </button>
+  );
+  return (
+    <div style={{ border: "1px solid var(--bd)", borderRadius: 10, overflow: "hidden" }}>
+      <style>{`.ik-rte:empty:before{content:attr(data-ph);color:var(--ink4);}`}</style>
+      <div style={{ display: "flex", gap: 5, padding: 7, borderBottom: "1px solid var(--bd)", background: "#FAFAFA", flexWrap: "wrap", alignItems: "center" }}>
+        <Tb title="Bold" onClick={() => cmd("bold")}><b>B</b></Tb>
+        <Tb title="Italic" onClick={() => cmd("italic")}><i>I</i></Tb>
+        <Tb title="Underline" onClick={() => cmd("underline")}><u>U</u></Tb>
+        <Tb title="Bullet list" onClick={() => cmd("insertUnorderedList")}>• List</Tb>
+        <span style={{ width: 1, height: 20, background: "var(--bd)", margin: "0 2px" }} />
+        {["🎉", "🙏", "📢", "✨", "❤️", "🪔", "🕉️"].map((e) => (
+          <Tb key={e} title={`Insert ${e}`} onClick={() => insert(e)}>{e}</Tb>
+        ))}
+      </div>
+      <div ref={ref} className="ik-rte" contentEditable suppressContentEditableWarning
+        data-ph="Write your announcement…" onInput={emit}
+        style={{ minHeight: 96, padding: 12, fontSize: ".9rem", lineHeight: 1.5, outline: "none" }} />
+    </div>
+  );
+}
+
 function Broadcast() {
   const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(""); // plain text (delivered in the push)
+  const [html, setHtml] = useState(""); // rich html (stored for the record)
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null); // {ok, text}
   const [confirm, setConfirm] = useState(false);
@@ -722,9 +758,9 @@ function Broadcast() {
     if (!title.trim()) { setMsg({ ok: false, text: "Enter a title" }); return; }
     setBusy(true); setMsg(null);
     try {
-      await broadcastAll(title.trim(), body.trim());
+      await broadcastAll(title.trim(), body.trim(), html);
       setMsg({ ok: true, text: "Announcement sent to all app users." });
-      setTitle(""); setBody(""); setConfirm(false);
+      setTitle(""); setBody(""); setHtml(""); setConfirm(false);
     } catch (e) {
       setMsg({ ok: false, text: String(e.message || e) });
     }
@@ -732,34 +768,54 @@ function Broadcast() {
   }
 
   return (
-    <div className="card" style={{ maxWidth: 560 }}>
-      <div className="h2" style={{ marginBottom: 4 }}>Send an announcement</div>
-      <p className="muted" style={{ marginBottom: 14 }}>
-        This sends a push notification to <b>every Invite Karoo app user</b> — not just one community. Use for app updates, festival greetings, or platform notices.
-      </p>
+    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+      <div className="card" style={{ flex: "1 1 380px", maxWidth: 560 }}>
+        <div className="h2" style={{ marginBottom: 4 }}>Send an announcement</div>
+        <p className="muted" style={{ marginBottom: 14 }}>
+          Sends a push to <b>every Invite Karoo app user</b> — not one community. For app updates, festival greetings, or platform notices.
+        </p>
 
-      <label className="label">Title</label>
-      <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Happy Durga Puja 🎉" maxLength={65} />
+        <label className="label">Title</label>
+        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Happy Durga Puja 🎉" maxLength={65} />
 
-      <label className="label" style={{ marginTop: 12 }}>Message</label>
-      <textarea className="input" rows={3} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Optional message body…" maxLength={240} />
+        <label className="label" style={{ marginTop: 12 }}>Message</label>
+        <RichEditor onChange={({ html, text }) => { setHtml(html); setBody(text); }} />
+        <div className="muted" style={{ marginTop: 6, fontSize: ".72rem" }}>
+          The phone notification shows plain text; formatting is kept on record.
+        </div>
 
-      {msg && <div className={msg.ok ? "" : "err"} style={{ marginTop: 12, color: msg.ok ? "#15803D" : undefined, fontWeight: 600, fontSize: ".82rem" }}>{msg.text}</div>}
+        {msg && <div className={msg.ok ? "" : "err"} style={{ marginTop: 12, color: msg.ok ? "#15803D" : undefined, fontWeight: 600, fontSize: ".82rem" }}>{msg.text}</div>}
 
-      {!confirm ? (
-        <button className="btn btn-p btn-block" style={{ marginTop: 16 }} disabled={busy} onClick={() => { if (!title.trim()) { setMsg({ ok: false, text: "Enter a title" }); return; } setMsg(null); setConfirm(true); }}>
-          <Icon name="bell" size={15} stroke="#fff" /> Review &amp; send
-        </button>
-      ) : (
-        <div style={{ marginTop: 16, padding: 14, border: "1px solid #FDE68A", background: "#FEF9EC", borderRadius: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Send to ALL app users?</div>
-          <div className="muted" style={{ marginBottom: 12, fontSize: ".82rem" }}>“{title.trim()}”{body.trim() ? ` — ${body.trim()}` : ""}</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-p" disabled={busy} onClick={send}>{busy ? "Sending…" : "Yes, send to everyone"}</button>
-            <button className="btn btn-ghost" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button>
+        {!confirm ? (
+          <button className="btn btn-p btn-block" style={{ marginTop: 16 }} disabled={busy}
+            onClick={() => { if (!title.trim()) { setMsg({ ok: false, text: "Enter a title" }); return; } setMsg(null); setConfirm(true); }}>
+            <Icon name="bell" size={15} stroke="#fff" /> Review &amp; send
+          </button>
+        ) : (
+          <div style={{ marginTop: 16, padding: 14, border: "1px solid #FDE68A", background: "#FEF9EC", borderRadius: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Send to ALL app users?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-p" disabled={busy} onClick={send}>{busy ? "Sending…" : "Yes, send to everyone"}</button>
+              <button className="btn btn-ghost" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Live phone-notification preview */}
+      <div style={{ flex: "0 0 300px" }}>
+        <div className="label" style={{ marginBottom: 8 }}>Preview</div>
+        <div style={{ background: "#1A0E3D", borderRadius: 20, padding: 14 }}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: 12, boxShadow: "0 4px 14px rgba(0,0,0,.25)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 20, height: 20, borderRadius: 5, background: "linear-gradient(135deg,#3D2582,#7C5CBF)" }} />
+              <span style={{ fontSize: ".64rem", fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: ".3px" }}>Invite Karoo · now</span>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: ".84rem", color: "#111", marginBottom: 2 }}>{title.trim() || "Announcement title"}</div>
+            <div style={{ fontSize: ".78rem", color: "#374151", whiteSpace: "pre-wrap" }}>{body.trim() || "Your message will appear here…"}</div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

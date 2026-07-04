@@ -25,6 +25,7 @@ import {
   watchAdmins,
   saveAdmin,
   removeAdmin,
+  broadcastAll,
 } from "@/lib/db";
 import Icon from "@/components/Icon";
 import AuthGate from "@/components/AuthGate";
@@ -41,6 +42,7 @@ const MODULES = [
   { id: "overview", label: "Platform Overview", ic: "grid", sec: "Review" },
   { id: "communities", label: "Communities", ic: "flower", sec: "Manage" },
   { id: "users", label: "Users", ic: "users", sec: "Manage" },
+  { id: "broadcast", label: "Announcements", ic: "bell", sec: "Manage" },
   { id: "codes", label: "Login Codes", ic: "clock", sec: "Testing" },
 ];
 const ALL_MODULE_IDS = MODULES.map((m) => m.id);
@@ -50,6 +52,7 @@ const TITLES = {
   overview: "Platform Overview",
   communities: "Communities",
   users: "Users",
+  broadcast: "Announcements",
   codes: "Login Codes (test)",
   admins: "Admins & Access",
 };
@@ -163,6 +166,7 @@ export default function AdminHome() {
             {shownView === "applications" ? <Applications />
               : shownView === "communities" ? <Communities />
               : shownView === "users" ? <Users />
+              : shownView === "broadcast" ? <Broadcast />
               : shownView === "codes" ? <LoginCodes />
               : shownView === "admins" && perm.isSuper ? <Admins email={user.email} />
               : shownView === "overview" ? <Overview />
@@ -704,6 +708,59 @@ function Admins({ email }) {
         ))}
       </div>
     </>
+  );
+}
+
+function Broadcast() {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null); // {ok, text}
+  const [confirm, setConfirm] = useState(false);
+
+  async function send() {
+    if (!title.trim()) { setMsg({ ok: false, text: "Enter a title" }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      await broadcastAll(title.trim(), body.trim());
+      setMsg({ ok: true, text: "Announcement sent to all app users." });
+      setTitle(""); setBody(""); setConfirm(false);
+    } catch (e) {
+      setMsg({ ok: false, text: String(e.message || e) });
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="card" style={{ maxWidth: 560 }}>
+      <div className="h2" style={{ marginBottom: 4 }}>Send an announcement</div>
+      <p className="muted" style={{ marginBottom: 14 }}>
+        This sends a push notification to <b>every Invite Karoo app user</b> — not just one community. Use for app updates, festival greetings, or platform notices.
+      </p>
+
+      <label className="label">Title</label>
+      <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Happy Durga Puja 🎉" maxLength={65} />
+
+      <label className="label" style={{ marginTop: 12 }}>Message</label>
+      <textarea className="input" rows={3} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Optional message body…" maxLength={240} />
+
+      {msg && <div className={msg.ok ? "" : "err"} style={{ marginTop: 12, color: msg.ok ? "#15803D" : undefined, fontWeight: 600, fontSize: ".82rem" }}>{msg.text}</div>}
+
+      {!confirm ? (
+        <button className="btn btn-p btn-block" style={{ marginTop: 16 }} disabled={busy} onClick={() => { if (!title.trim()) { setMsg({ ok: false, text: "Enter a title" }); return; } setMsg(null); setConfirm(true); }}>
+          <Icon name="bell" size={15} stroke="#fff" /> Review &amp; send
+        </button>
+      ) : (
+        <div style={{ marginTop: 16, padding: 14, border: "1px solid #FDE68A", background: "#FEF9EC", borderRadius: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Send to ALL app users?</div>
+          <div className="muted" style={{ marginBottom: 12, fontSize: ".82rem" }}>“{title.trim()}”{body.trim() ? ` — ${body.trim()}` : ""}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-p" disabled={busy} onClick={send}>{busy ? "Sending…" : "Yes, send to everyone"}</button>
+            <button className="btn btn-ghost" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

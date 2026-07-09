@@ -60,7 +60,22 @@ export async function POST(req) {
         at: admin.firestore.FieldValue.serverTimestamp(),
       });
     } catch (_) {}
-    return NextResponse.json({ ok: true, id });
+
+    // Fan out a WhatsApp platform_announcement to every user with a mobile.
+    let waResult = null;
+    try {
+      const { sendWhatsAppBulk } = await import("@/lib/whatsapp");
+      const users = await admin.firestore().collection("users").get();
+      const numbers = users.docs.map((d) => d.data().mobile).filter(Boolean);
+      waResult = await sendWhatsAppBulk(numbers, () => ({
+        template: "platform_announcement",
+        language: "en",
+        bodyVars: [title, body || ""],
+      }));
+    } catch (e) {
+      waResult = { error: String(e?.message || e) };
+    }
+    return NextResponse.json({ ok: true, id, wa: waResult });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
